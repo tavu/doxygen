@@ -5641,7 +5641,7 @@ bool readInputFile(const QCString &fileName,BufStr &inBuf,bool filter,bool isSou
   }
   else
   {
-    QCString cmd=filterName+" \""+fileName+"\"";
+    QCString cmd=filterName+" '"+fileName+"'";
     Debug::print(Debug::ExtCmd,0,"Executing popen(`%s`)\n",qPrint(cmd));
     FILE *f=Portable::popen(cmd,"r");
     if (!f)
