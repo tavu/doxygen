@@ -6074,7 +6074,7 @@ bool readInputFile(const QCString &fileName,std::string &contents,bool filter,bo
   }
   else
   {
-    QCString cmd=filterName+" \""+fileName+"\"";
+    QCString cmd=filterName+" '"+fileName+"'";
     Debug::print(Debug::ExtCmd,0,"Executing popen(`{}`)\n",cmd);
     FILE *f=Portable::popen(cmd,"r");
     if (!f)
