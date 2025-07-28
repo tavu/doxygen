@@ -1192,6 +1192,7 @@ void DefinitionImpl::addSourceReferencedBy(MemberDef *md,const QCString &sourceR
 {
   if (md)
   {
+    //msg("Adding source ref by {}\n", sourceRefName.str());
     p->sourceRefByDict.emplace(sourceRefName.str(),md);
   }
 }
@@ -1200,6 +1201,7 @@ void DefinitionImpl::addSourceReferences(MemberDef *md,const QCString &sourceRef
 {
   if (md)
   {
+    //msg("Adding source ref {}\n", sourceRefName.str());
     p->sourceRefsDict.emplace(sourceRefName.str(),md);
   }
 }
@@ -1361,6 +1363,54 @@ QCString DefinitionImpl::pathFragment() const
     result+=p->localName;
   }
   return result;
+}
+
+void DefinitionImpl::mergeReferencesAll(const Definition *other)
+{
+  const DefinitionImpl *defImpl = other->toDefinitionImpl_();
+  if (defImpl)
+  {
+    for (const auto &kv : defImpl->p->sourceRefsDict)
+    {
+      const std::string first = kv.first;
+      auto it = p->sourceRefsDict.find(kv.first);
+      if (it == p->sourceRefsDict.end())
+      {
+        p->sourceRefsDict.emplace(kv.first,kv.second);
+        continue;
+      }
+      //msg("forced {}\n",first);
+      //p->sourceRefsDict.emplace(kv.first,kv.second);
+    }
+  }
+  else
+  {
+    msg("no def impl\n");
+  }
+}
+
+void DefinitionImpl::mergeReferencedByAll(const Definition *other)
+{
+  const DefinitionImpl *defImpl = other->toDefinitionImpl_();
+  if (defImpl)
+  {
+    for (const auto &kv : defImpl->p->sourceRefByDict)
+    {
+      const std::string first = kv.first;
+      auto it = p->sourceRefByDict.find(first);
+      if (it == p->sourceRefByDict.end())
+      {
+        p->sourceRefByDict.emplace(kv.first,kv.second);
+        continue;
+      }
+      //msg("forced {}\n", first);
+      //p->sourceRefByDict.emplace(kv.first,kv.second);
+    }
+  }
+  else
+  {
+    msg("no def impl\n");
+  }
 }
 
 //----------------------------------------------------------------------------------------

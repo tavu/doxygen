@@ -367,6 +367,8 @@ class DefinitionMutable
     virtual void addInnerCompound(Definition *d) = 0;
     virtual void mergeReferences(const Definition *other) = 0;
     virtual void mergeReferencedBy(const Definition *other) = 0;
+    virtual void mergeReferencesAll(const Definition *other) = 0;
+    virtual void mergeReferencedByAll(const Definition *other) = 0;
     virtual void computeTooltip() = 0;
 
     //-----------------------------------------------------------------------------------

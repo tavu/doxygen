@@ -110,6 +110,7 @@
 #include "moduledef.h"
 #include "stringutil.h"
 #include "singlecomment.h"
+#include "definitionimpl.h"
 
 #include <sqlite3.h>
 
@@ -4313,12 +4314,62 @@ static void transferFunctionDocumentation()
 
 //----------------------------------------------------------------------
 
+static void linkDefineFuncs()
+{
+  for (const auto &mn : *Doxygen::functionNameLinkedMap)
+  {
+  // for each function name
+    for (const auto &imd : *mn)
+    {
+      MemberDefMutable *md = toMemberDefMutable(imd.get());
+      if (md && (md->isFunction() || (md->isVariable() && md->isExternal())))
+      {
+        const auto name = md->name();
+        bool is_upper = true;
+        for (const auto &letter : name.str())
+        {
+          if (std::islower(letter))
+          {
+            is_upper = false;
+            break;
+          }
+        }
+        if (is_upper)
+        {
+          //msg("function: {} is upper\n",name);
+          auto lowerName = name.str();
+          std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+          const auto match = Doxygen::functionNameLinkedMap->find(lowerName);
+          if (match)
+          {
+            for (const auto &imd2 : *match)
+            {
+              MemberDefMutable *md2 = toMemberDefMutable(imd2.get());
+              if (md2 && (md2->isDefine() || md2->isFunction() || (md2->isVariable() && md2->isExternal())))
+              {
+                msg("merging references for {} and {}\n", md->name(), md2->name());
+                md2->mergeReferencesAll(md);
+                md->mergeReferencesAll(md2);
+                md2->mergeReferencedByAll(md);
+                md->mergeReferencedByAll(md2);
+              }
+            }
+          }
+        }
+        //else
+          //msg("function: {} is not upper\n",name);
+      }
+    }
+  }
+}
+
 static void transferFunctionReferences()
 {
   AUTO_TRACE();
   for (const auto &mn : *Doxygen::functionNameLinkedMap)
   {
     MemberDefMutable *mdef=nullptr,*mdec=nullptr;
+
     /* find a matching function declaration and definition for this function */
     for (const auto &imd : *mn)
     {
@@ -10629,7 +10680,7 @@ static std::shared_ptr<Entry> parseFile(OutlineParserInterface &parser,
       preprocessor.addSearchDir(absPath.c_str());
     }
     std::string inBuf;
-    msg("Preprocessing {}...\n",fn);
+    msg("Preprocessing: {}...\n",fn);
     readInputFile(fileName,inBuf);
     addTerminalCharIfMissing(inBuf,'\n');
     preprocessor.processFile(fileName,inBuf,preBuf);
@@ -13190,6 +13241,11 @@ void generateOutput()
 
   g_s.begin("Generating file sources...\n");
   generateFileSources();
+  g_s.end();
+
+  g_s.begin("Link functions...\n");
+  transferFunctionReferences();
+  linkDefineFuncs();
   g_s.end();
 
   g_s.begin("Generating file documentation...\n");

@@ -102,6 +102,8 @@ class DefinitionImpl
     void mergeRefItems(Definition *d);
     void mergeReferences(const Definition *other);
     void mergeReferencedBy(const Definition *other);
+    void mergeReferencesAll(const Definition *other);
+    void mergeReferencedByAll(const Definition *other);
     void addInnerCompound(Definition *d);
     void setOuterScope(Definition *d);
     void setHidden(bool b);
@@ -242,6 +244,10 @@ class DefinitionMixin : public Base
     { m_impl.mergeReferences(other); }
     void mergeReferencedBy(const Definition *other) override
     { m_impl.mergeReferencedBy(other); }
+    void mergeReferencesAll(const Definition *other) override
+    { m_impl.mergeReferencesAll(other); }
+    void mergeReferencedByAll(const Definition *other) override
+    { m_impl.mergeReferencedByAll(other); }
     void addInnerCompound(Definition *def) override
     { m_impl.addInnerCompound(def); }
     void setOuterScope(Definition *def) override
