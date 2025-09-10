@@ -4345,11 +4345,15 @@ static void linkDefineFuncs()
             for (const auto &imd2 : *match)
             {
               MemberDefMutable *md2 = toMemberDefMutable(imd2.get());
-              if (md2 && (md2->isDefine() || md2->isFunction() || (md2->isVariable() && md2->isExternal())))
+              if (md2 && (
+                  ((md2->isDefine() || md2->isFunction()) && md->isFunction())
+                    || (md2->isVariable() && md2->isExternal() && md->isVariable())
+                  )
+                )
               {
                 msg("merging references for {} and {}\n", md->name(), md2->name());
-                md2->mergeReferencesAll(md);
-                md->mergeReferencesAll(md2);
+                //md2->mergeReferencesAll(md);
+                //md->mergeReferencesAll(md2);
                 md2->mergeReferencedByAll(md);
                 md->mergeReferencedByAll(md2);
               }
