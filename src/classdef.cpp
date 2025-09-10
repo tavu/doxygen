@@ -1175,7 +1175,7 @@ void ClassDefImpl::internalInsertMember(MemberDef *md,
                   addMemberToList(MemberListType::PubTypes(),md,TRUE);
                   isSimple=!md->isEnumerate() &&
                            !md->isEnumValue() &&
-                           QCString(md->typeString()).find(")(")==-1; // func ptr typedef
+                           md->typeString().find(")(")==-1; // func ptr typedef
                   break;
                 case Protection::Private:
                   addMemberToList(MemberListType::PriTypes(),md,TRUE);
@@ -1311,9 +1311,9 @@ void ClassDefImpl::internalInsertMember(MemberDef *md,
   if (addToAllList &&
       !(Config_getBool(HIDE_FRIEND_COMPOUNDS) &&
         md->isFriend() &&
-        (QCString(md->typeString())=="friend class" ||
-         QCString(md->typeString())=="friend struct" ||
-         QCString(md->typeString())=="friend union")))
+        (md->typeString()=="friend class" ||
+         md->typeString()=="friend struct" ||
+         md->typeString()=="friend union")))
   {
     //printf("=======> adding member %s to class %s\n",qPrint(md->name()),qPrint(name()));
 
@@ -1417,7 +1417,7 @@ static void writeInheritanceSpecifier(OutputList &ol,const BaseClassDef &bcd)
     for (const auto &s : sl)
     {
       if (!first) ol.docify(", ");
-      ol.docify(s.c_str());
+      ol.docify(s);
       first=false;
     }
     ol.docify("]");
@@ -1564,9 +1564,14 @@ void ClassDefImpl::writeBriefDescription(OutputList &ol,bool exampleFlag) const
     ol.disableAllBut(OutputType::Man);
     ol.writeString(" - ");
     ol.popGeneratorState();
-    ol.generateDoc(briefFile(),briefLine(),this,nullptr,
-                   briefDescription(),TRUE,FALSE,QCString(),
-                   TRUE,FALSE);
+    ol.generateDoc(briefFile(),
+                   briefLine(),
+                   this,
+                   nullptr,
+                   briefDescription(),
+                   DocOptions()
+                   .setIndexWords(true)
+                   .setSingleLine(true));
     ol.pushGeneratorState();
     ol.disable(OutputType::RTF);
     ol.writeString(" \n");
@@ -1597,8 +1602,12 @@ void ClassDefImpl::writeDetailedDocumentationBody(OutputList &ol) const
   // repeat brief description
   if (!briefDescription().isEmpty() && repeatBrief)
   {
-    ol.generateDoc(briefFile(),briefLine(),this,nullptr,briefDescription(),FALSE,FALSE,
-                   QCString(),FALSE,FALSE);
+    ol.generateDoc(briefFile(),
+                   briefLine(),
+                   this,
+                   nullptr,
+                   briefDescription(),
+                   DocOptions());
   }
   if (!briefDescription().isEmpty() && repeatBrief &&
       !documentation().isEmpty())
@@ -1611,8 +1620,13 @@ void ClassDefImpl::writeDetailedDocumentationBody(OutputList &ol) const
   // write documentation
   if (!documentation().isEmpty())
   {
-    ol.generateDoc(docFile(),docLine(),this,nullptr,documentation(),TRUE,FALSE,
-                   QCString(),FALSE,FALSE);
+    ol.generateDoc(docFile(),
+                   docLine(),
+                   this,
+                   nullptr,
+                   documentation(),
+                   DocOptions()
+                   .setIndexWords(true));
   }
   // write type constraints
   writeTypeConstraints(ol,this,m_typeConstraints);
@@ -1622,10 +1636,8 @@ void ClassDefImpl::writeDetailedDocumentationBody(OutputList &ol) const
         this,
         nullptr,         // memberDef
         inlineTemplateArgListToDoc(m_tempArgs),    // docStr
-        TRUE,         // indexWords
-        FALSE,        // isExample
-        QCString(),FALSE,FALSE
-        );
+        DocOptions()
+        .setIndexWords(true));
 
   // write examples
   if (hasExamples())
@@ -2298,7 +2310,7 @@ void ClassDefImpl::writeSummaryLinks(OutputList &ol) const
   {
     for (const auto &s : m_vhdlSummaryTitles)
     {
-      ol.writeSummaryLink(QCString(),convertToId(QCString(s)),QCString(s),first);
+      ol.writeSummaryLink(QCString(),convertToId(s),s,first);
       first=FALSE;
     }
   }
@@ -2691,9 +2703,14 @@ void ClassDefImpl::writeDeclarationLink(OutputList &ol,bool &found,const QCStrin
     {
       auto parser { createDocParser() };
       auto ast    { validatingParseDoc(*parser.get(),
-                                briefFile(),briefLine(),this,nullptr,
-                                briefDescription(),FALSE,FALSE,
-                                QCString(),TRUE,FALSE) };
+                                       briefFile(),
+                                       briefLine(),
+                                       this,
+                                       nullptr,
+                                       briefDescription(),
+                                       DocOptions()
+                                       .setSingleLine(true))
+                  };
       if (!ast->isEmpty())
       {
         ol.startMemberDescription(anchor());
@@ -2736,7 +2753,7 @@ void ClassDefImpl::addClassAttributes(OutputList &ol) const
     for (const auto &s : sl)
     {
       i++;
-      ol.writeLabel(s.c_str(),i==sl.size());
+      ol.writeLabel(s,i==sl.size());
     }
     ol.endLabels();
   }
@@ -2995,7 +3012,7 @@ void ClassDefImpl::writeDocumentation(OutputList &ol) const
   {
     memListFile = getMemberListFileName();
   }
-  startFile(ol,getOutputFileBase(),name(),pageTitle,hli,!generateTreeView,QCString(),0,memListFile);
+  startFile(ol,getOutputFileBase(),false,name(),pageTitle,hli,!generateTreeView,QCString(),0,memListFile);
   if (!generateTreeView)
   {
     if (getOuterScope()!=Doxygen::globalScope)
@@ -3143,7 +3160,7 @@ void ClassDefImpl::writeMemberList(OutputList &ol) const
   }
 
   QCString memListFile = getMemberListFileName();
-  startFile(ol,memListFile,memListFile,theTranslator->trMemberList(),hli,!generateTreeView,getOutputFileBase());
+  startFile(ol,memListFile,false,memListFile,theTranslator->trMemberList(),hli,!generateTreeView,getOutputFileBase());
   if (!generateTreeView)
   {
     if (getOuterScope()!=Doxygen::globalScope)
@@ -3317,7 +3334,7 @@ void ClassDefImpl::writeMemberList(OutputList &ol) const
             (prot!=Protection::Public || (virt!=Specifier::Normal && getLanguage()!=SrcLangExt::ObjC) ||
              md->isFriend() || md->isRelated() || md->isExplicit() ||
              md->isMutable() || (md->isInline() && Config_getBool(INLINE_INFO)) ||
-             md->isSignal() || md->isSlot() ||
+             md->isSignal() || md->isSlot() || md->isThreadLocal() ||
              (getLanguage()==SrcLangExt::IDL &&
               (md->isOptional() || md->isAttribute() || md->isUNOProperty())) ||
              md->isStatic() || lang==SrcLangExt::VHDL
@@ -3337,6 +3354,7 @@ void ClassDefImpl::writeMemberList(OutputList &ol) const
                                                    sl.emplace_back("inline");
             if (md->isExplicit())                  sl.emplace_back("explicit");
             if (md->isMutable())                   sl.emplace_back("mutable");
+            if (md->isThreadLocal())               sl.emplace_back("thread_local");
             if (prot==Protection::Protected)       sl.emplace_back("protected");
             else if (prot==Protection::Private)    sl.emplace_back("private");
             else if (prot==Protection::Package)    sl.emplace_back("package");
@@ -3371,7 +3389,7 @@ void ClassDefImpl::writeMemberList(OutputList &ol) const
               ol.writeString("<span class=\"mlabel\">");
               firstSpan=false;
             }
-            ol.docify(s.c_str());
+            ol.docify(s);
           }
           if (!firstSpan) ol.writeString("</span>");
         }

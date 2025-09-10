@@ -107,8 +107,7 @@ static QCString stripKnownExtensions(const QCString &text)
   {
     result=result.left(result.length()-4);
   }
-  else if (result.right(Doxygen::htmlFileExtension.length())==
-         QCString(Doxygen::htmlFileExtension))
+  else if (result.right(Doxygen::htmlFileExtension.length())==Doxygen::htmlFileExtension)
   {
     result=result.left(result.length()-Doxygen::htmlFileExtension.length());
   }
@@ -1949,13 +1948,16 @@ bool DocHtmlRow::isHeading() const
 
 static Token skipSpacesForTable(DocParser *parser)
 {
+  AUTO_TRACE();
   // get next token
   Token tok=parser->tokenizer.lex();
   // skip whitespace and tbody, thead and tfoot tags
-  while (tok.is_any_of(TokenRetval::TK_WHITESPACE,TokenRetval::TK_NEWPARA,TokenRetval::TK_HTMLTAG))
+  while (tok.is_any_of(TokenRetval::TK_WHITESPACE,TokenRetval::TK_NEWPARA,TokenRetval::TK_HTMLTAG,
+                       TokenRetval::TK_COMMAND_AT,TokenRetval::TK_COMMAND_BS))
   {
     if (tok.is(TokenRetval::TK_HTMLTAG))
     {
+      AUTO_TRACE_ADD("html_tag={}",parser->context.token->name);
       HtmlTagType tagId=Mappers::htmlTagMapper->map(parser->context.token->name);
       // skip over tbody, thead, tfoot tags
       if (tagId==HtmlTagType::HTML_TBODY ||
@@ -1969,13 +1971,39 @@ static Token skipSpacesForTable(DocParser *parser)
         break;
       }
     }
+    else if (tok.is(TokenRetval::TK_COMMAND_AT) || tok.is(TokenRetval::TK_COMMAND_BS))
+    {
+      QCString cmdName=parser->context.token->name;
+      AUTO_TRACE_ADD("command={}",cmdName);
+      auto cmdType = Mappers::cmdMapper->map(cmdName);
+      if (cmdType==CommandType::CMD_ILINE)
+      {
+        parser->tokenizer.pushState();
+        parser->tokenizer.setStateILine();
+        tok = parser->tokenizer.lex();
+        if (!tok.is(TokenRetval::TK_WORD))
+        {
+          warn_doc_error(parser->context.fileName,parser->tokenizer.getLineNr(),"invalid argument for command '{:c}{}'",
+              tok.command_to_char(),cmdName);
+        }
+        parser->tokenizer.popState();
+        tok = parser->tokenizer.lex();
+      }
+      else
+      {
+        break;
+      }
+    }
     else
     {
+      AUTO_TRACE_ADD("skip whitespace");
       tok=parser->tokenizer.lex();
     }
   }
   return tok;
 }
+
+
 
 
 Token DocHtmlRow::parse()
@@ -2156,13 +2184,19 @@ const DocNodeVariant *DocHtmlTable::caption() const
   return m_caption.get();
 }
 
-const DocNodeVariant *DocHtmlTable::firstRow() const
+size_t DocHtmlTable::numberHeaderRows() const
 {
-  if (!children().empty() && std::holds_alternative<DocHtmlRow>(children().front()))
+  size_t hl = 0;
+  for (auto &rowNode : children())
   {
-    return &children().front();
+    const DocHtmlRow *row = std::get_if<DocHtmlRow>(&rowNode);
+    if (row)
+    {
+      if (!row->isHeading())  break;
+      hl++;
+    }
   }
-  return nullptr;
+  return hl;
 }
 
 Token DocHtmlTable::parse()
@@ -2237,7 +2271,7 @@ getrow:
       {
         retval = Token::make_RetVal_EndTable();
       }
-      else  // found some other tag
+      else // found some other tag
       {
         warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"expected <tr> or </table> tag but "
             "found token {} instead!",retval.to_string());

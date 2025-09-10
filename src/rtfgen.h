@@ -102,8 +102,8 @@ class RTFGenerator : public OutputGenerator, public OutputGenIntf
     std::unique_ptr<OutputGenIntf> clone() override { return std::make_unique<RTFGenerator>(*this); }
     void addCodeGen(OutputCodeList &list) override;
     void cleanup() override;
-    void writeDoc(const IDocNodeAST *ast,const Definition *,const MemberDef *,int) override;
-    void startFile(const QCString &name,const QCString &manName,const QCString &title,int id,int hierarchyLevel) override;
+    void writeDoc(const IDocNodeAST *ast,const Definition *,const MemberDef *,int,int) override;
+    void startFile(const QCString &name,bool isSource,const QCString &manName,const QCString &title,int id,int hierarchyLevel) override;
     void endFile() override;
 
     void writeSearchInfo() override {}

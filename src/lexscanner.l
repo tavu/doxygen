@@ -52,7 +52,7 @@ typedef yyguts_t *yyscan_t;
 #define YY_NO_INPUT 1
 #define YY_NO_UNISTD_H 1
 
-#define repeatChar(chr, cnt) std::string(cnt, chr).c_str()
+#define repeatChar(chr, cnt) QCString().fill(chr,cnt)
 
 struct lexscannerYY_state
 {
@@ -521,9 +521,9 @@ NONLopt [^\n]*
                             BEGIN( PreLineCtrl );
                           }
 <SkipCurly>{B}*{RAWBEGIN}  {
-                            QCString raw=QCString(yytext).stripWhiteSpace();
-                            yyextra->delimiter = raw.mid(2);
-                            yyextra->delimiter=yyextra->delimiter.left(yyextra->delimiter.length()-1);
+                            char *p=yytext;
+                            while (*p && qisspace(*p)) p++;
+                            yyextra->delimiter = extractBeginRawStringDelimiter(p);
                             yyextra->lastRawStringContext = YY_START;
                             yyextra->cCodeBuffer += yytext;
                             BEGIN(RawString);
@@ -651,9 +651,7 @@ NONLopt [^\n]*
                           }
 <RawString>{RAWEND}       {
                             yyextra->cCodeBuffer += yytext;
-                            QCString delimiter = yytext+1;
-                            delimiter=delimiter.left(delimiter.length()-1);
-                            if (delimiter==yyextra->delimiter)
+                            if (extractEndRawStringDelimiter(yytext)==yyextra->delimiter)
                             {
                               BEGIN(yyextra->lastRawStringContext);
                             }

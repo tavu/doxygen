@@ -338,9 +338,9 @@ void DocParser::checkUnOrMultipleDocumentedParams()
         bool first=TRUE;
         QCString errMsg = "The following parameter";
         if (undocParams.size()>1) errMsg+="s";
-        errMsg+=" of "+
-            QCString(context.memberDef->qualifiedName()) +
-            QCString(argListToString(al)) +
+        errMsg+=QCString(" of ")+
+            context.memberDef->qualifiedName() +
+            argListToString(al) +
             (undocParams.size()>1 ? " are" : " is") + " not documented:\n";
         for (const Argument &a : undocParams)
         {
@@ -626,6 +626,7 @@ void DocParser::handleStyleEnter(DocNodeVariant *parent,DocNodeList &children,
   children.append<DocStyleChange>(this,parent,context.nodeStack.size(),s,tagName,TRUE,
                                   context.fileName,tokenizer.getLineNr(),attribs);
   context.styleStack.push(&children.back());
+  context.inCodeStyle = s==DocStyleChange::Style::Typewriter;
 }
 
 /*! Called when a style change ends. For instance a \</b\> command is
@@ -670,6 +671,10 @@ void DocParser::handleStyleLeave(DocNodeVariant *parent,DocNodeList &children,
           this,parent,context.nodeStack.size(),s,
           topStyleChange(context.styleStack).tagName(),FALSE);
     context.styleStack.pop();
+  }
+  if (s==DocStyleChange::Style::Typewriter)
+  {
+    context.inCodeStyle = false;
   }
 }
 
@@ -800,11 +805,12 @@ void DocParser::handleLinkedWord(DocNodeVariant *parent,DocNodeList &children,bo
   bool ambig = false;
   FileDef *fd = findFileDef(Doxygen::inputNameLinkedMap,context.fileName,ambig);
   auto lang = context.lang;
+  bool inSeeBlock = context.inSeeBlock || context.inCodeStyle;
   //printf("handleLinkedWord(%s) context.context=%s\n",qPrint(context.token->name),qPrint(context.context));
   if (!context.insideHtmlLink &&
-      (resolveRef(context.context,context.token->name,context.inSeeBlock,&compound,&member,lang,TRUE,fd,TRUE)
+      (resolveRef(context.context,context.token->name,inSeeBlock,&compound,&member,lang,TRUE,fd,TRUE)
        || (!context.context.isEmpty() &&  // also try with global scope
-           resolveRef(QCString(),context.token->name,context.inSeeBlock,&compound,&member,lang,FALSE,nullptr,TRUE))
+           resolveRef(QCString(),context.token->name,inSeeBlock,&compound,&member,lang,FALSE,nullptr,TRUE))
       )
      )
   {
@@ -815,7 +821,7 @@ void DocParser::handleLinkedWord(DocNodeVariant *parent,DocNodeList &children,bo
       if (member->isObjCMethod())
       {
         bool localLink = context.memberDef ? member->getClassDef()==context.memberDef->getClassDef() : FALSE;
-        name = member->objCMethodName(localLink,context.inSeeBlock);
+        name = member->objCMethodName(localLink,inSeeBlock);
       }
       children.append<DocLinkedWord>(
             this,parent,name,
@@ -1920,13 +1926,12 @@ QCString DocParser::processCopyDoc(const char *data,size_t &len)
 //---------------------------------------------------------------------------
 
 IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
-                            const QCString &fileName,int startLine,
-                            const Definition *ctx,const MemberDef *md,
-                            const QCString &input,bool indexWords,
-                            bool isExample, const QCString &exampleName,
-                            bool singleLine, bool linkFromIndex,
-                            bool markdownSupport,
-                            bool autolinkSupport)
+                                  const QCString &fileName,
+                                  int startLine,
+                                  const Definition *ctx,
+                                  const MemberDef *md,
+                                  const QCString &input,
+                                  const DocOptions &options)
 {
   DocParser *parser = dynamic_cast<DocParser*>(&parserIntf);
   assert(parser!=nullptr);
@@ -1971,7 +1976,7 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
   parser->context.scope = ctx;
   parser->context.lang = getLanguageFromFileName(fileName);
 
-  if (indexWords && Doxygen::searchIndex.enabled())
+  if (options.indexWords() && Doxygen::searchIndex.enabled())
   {
     if (md)
     {
@@ -1990,8 +1995,8 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
   }
 
   parser->context.fileName = fileName;
-  parser->context.relPath = (!linkFromIndex && ctx) ?
-               QCString(relativePathToRoot(ctx->getOutputFileBase())) :
+  parser->context.relPath = (!options.linkFromIndex() && ctx) ?
+               relativePathToRoot(ctx->getOutputFileBase()) :
                QCString("");
   //printf("ctx->name=%s relPath=%s\n",qPrint(ctx->name()),qPrint(parser->context.relPath));
   parser->context.memberDef = md;
@@ -1999,19 +2004,20 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
   while (!parser->context.styleStack.empty()) parser->context.styleStack.pop();
   while (!parser->context.initialStyleStack.empty()) parser->context.initialStyleStack.pop();
   parser->context.inSeeBlock = FALSE;
+  parser->context.inCodeStyle = FALSE;
   parser->context.xmlComment = FALSE;
   parser->context.insideHtmlLink = FALSE;
   parser->context.includeFileText = "";
   parser->context.includeFileOffset = 0;
   parser->context.includeFileLength = 0;
-  parser->context.isExample = isExample;
-  parser->context.exampleName = exampleName;
+  parser->context.isExample = options.isExample();
+  parser->context.exampleName = options.exampleName();
   parser->context.hasParamCommand = FALSE;
   parser->context.hasReturnCommand = FALSE;
   parser->context.retvalsFound.clear();
   parser->context.paramsFound.clear();
-  parser->context.markdownSupport = markdownSupport;
-  parser->context.autolinkSupport = autolinkSupport;
+  parser->context.markdownSupport = options.markdownSupport();
+  parser->context.autolinkSupport = options.autolinkSupport();
 
   //printf("Starting comment block at %s:%d\n",qPrint(parser->context.fileName),startLine);
   parser->tokenizer.setLineNr(startLine);
@@ -2021,12 +2027,12 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
   {
     inpStr+='\n';
   }
-  //printf("processCopyDoc(in='%s' out='%s')\n",input,qPrint(inpStr));
+  //printf("processCopyDoc(in='%s' out='%s')\n",qPrint(input),qPrint(inpStr));
   parser->tokenizer.init(inpStr.data(),parser->context.fileName,
                          parser->context.markdownSupport,parser->context.insideHtmlLink);
 
   // build abstract syntax tree
-  auto ast = std::make_unique<DocNodeAST>(DocRoot(parser,md!=nullptr,singleLine));
+  auto ast = std::make_unique<DocNodeAST>(DocRoot(parser,md!=nullptr,options.singleLine()));
   std::get<DocRoot>(ast->root).parse();
 
   if (Debug::isFlagSet(Debug::PrintTree))
@@ -2069,6 +2075,7 @@ IDocNodeASTPtr validatingParseTitle(IDocParser &parserIntf,const QCString &fileN
   while (!parser->context.styleStack.empty()) parser->context.styleStack.pop();
   while (!parser->context.initialStyleStack.empty()) parser->context.initialStyleStack.pop();
   parser->context.inSeeBlock = FALSE;
+  parser->context.inCodeStyle = FALSE;
   parser->context.xmlComment = FALSE;
   parser->context.insideHtmlLink = FALSE;
   parser->context.includeFileText = "";
@@ -2122,6 +2129,7 @@ IDocNodeASTPtr validatingParseText(IDocParser &parserIntf,const QCString &input)
   while (!parser->context.styleStack.empty()) parser->context.styleStack.pop();
   while (!parser->context.initialStyleStack.empty()) parser->context.initialStyleStack.pop();
   parser->context.inSeeBlock = FALSE;
+  parser->context.inCodeStyle = FALSE;
   parser->context.xmlComment = FALSE;
   parser->context.insideHtmlLink = FALSE;
   parser->context.includeFileText = "";

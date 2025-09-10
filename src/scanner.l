@@ -227,8 +227,6 @@ static QCString stripFuncPtr(const QCString &type);
 static bool nameIsOperator(QCString &name);
 void fixArgumentListForJavaScript(ArgumentList &al);
 static bool startOfRequiresExpression(const QCString &req);
-static QCString extractBeginRawStringDelimiter(const char *str);
-static QCString extractEndRawStringDelimiter(const char *str);
 
 // forward declarations for stateful functions
 static void initParser(yyscan_t yyscanner);
@@ -1328,6 +1326,10 @@ NONLopt [^\n]*
                                           yyextra->current->spec.setMutable(true);
                                           lineCount(yyscanner);
                                         }
+<FindMembers>{B}*"thread_local"{BN}+    { if (yyextra->insideJava) REJECT;
+                                          yyextra->current->spec.setThreadLocal(true);
+                                          lineCount(yyscanner);
+                                        }
 <FindMembers>{B}*"explicit"{BN}+        { if (yyextra->insideJava) REJECT;
                                           yyextra->current->spec.setExplicit(true);
                                           lineCount(yyscanner);
@@ -2307,7 +2309,7 @@ NONLopt [^\n]*
                                           unput(';');
                                           BEGIN(FindMembers);
                                         }
-<QtPropType>{B}+                        {
+<QtPropType>{BN}+                       {
                                           yyextra->current->name+=yytext;
                                         }
 <QtPropType>"*"                         {
@@ -2319,24 +2321,24 @@ NONLopt [^\n]*
                                           yyextra->current->type+= yyextra->current->name;
                                           yyextra->current->name=yytext;
                                         }
-<QtPropType,QtPropAttr>{B}+"READ"{B}+   {
+<QtPropType,QtPropAttr>{BN}+"READ"{BN}+   {
                                           yyextra->current->spec.setReadable(true);
                                           BEGIN(QtPropRead);
                                         }
-<QtPropType,QtPropAttr>{B}+"WRITE"{B}+  {
+<QtPropType,QtPropAttr>{BN}+"WRITE"{BN}+  {
                                           yyextra->current->spec.setWritable(true);
                                           BEGIN(QtPropWrite);
                                         }
-<QtPropType,QtPropAttr>{B}+"MEMBER"{B}+{ID}     | // member property => not supported yet
-<QtPropType,QtPropAttr>{B}+"RESET"{B}+{ID}      | // reset method => not supported yet
-<QtPropType,QtPropAttr>{B}+"SCRIPTABLE"{B}+{ID} | // scriptable property => not supported yet
-<QtPropType,QtPropAttr>{B}+"DESIGNABLE"{B}+{ID} | // designable property => not supported yet
-<QtPropType,QtPropAttr>{B}+"NOTIFY"{B}+{ID}     | // notify property => not supported yet
-<QtPropType,QtPropAttr>{B}+"REVISION"{B}+{ID}   | // revision property => not supported yet
-<QtPropType,QtPropAttr>{B}+"STORED"{B}+{ID}     | // stored property => not supported yet
-<QtPropType,QtPropAttr>{B}+"USER"{B}+{ID}       | // user property => not supported yet
-<QtPropType,QtPropAttr>{B}+"CONSTANT"{B}        | // constant property => not supported yet
-<QtPropType,QtPropAttr>{B}+"FINAL"{B}           { // final property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"MEMBER"{BN}+{ID}     | // member property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"RESET"{BN}+{ID}      | // reset method => not supported yet
+<QtPropType,QtPropAttr>{BN}+"SCRIPTABLE"{BN}+{ID} | // scriptable property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"DESIGNABLE"{BN}+{ID} | // designable property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"NOTIFY"{BN}+{ID}     | // notify property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"REVISION"{BN}+{ID}   | // revision property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"STORED"{BN}+{ID}     | // stored property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"USER"{BN}+{ID}       | // user property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"CONSTANT"{BN}        | // constant property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"FINAL"{BN}           { // final property => not supported yet
                                           BEGIN(QtPropAttr);
                                         }
 <QtPropRead>{ID}                        {
@@ -3647,7 +3649,7 @@ NONLopt [^\n]*
 <GCopyCurly>^"#"{B}+[0-9]+{B}+"\""[^\"\n]+"\""{B}+"1"{B}*\n? { // start of included file marker
                                         }
 <GCopyCurly>^"#"{B}+[0-9]+{B}+"\""[^\"\n]+"\""{B}+"2"{B}*\n? { // end of included file marker
-                                          QCString line = QCString(yytext);
+                                          QCString line = yytext;
                                           int s = line.find(' ');
                                           int e = line.find('"',s);
                                           yyextra->yyLineNr = line.mid(s,e-s).toInt();
@@ -7339,14 +7341,14 @@ NONLopt [^\n]*
                                           }
                                         }
 <DocCopyBlock>"''"/[^a-z_A-Z0-9-]       {
-                                          if (endVerbatimBlock(yyscanner,"``",2))
+                                          if (!Config_getBool(MARKDOWN_STRICT) && endVerbatimBlock(yyscanner,"``",2))
                                           {
                                             BEGIN(DocBlock);
                                           }
                                           yyextra->docBlock << yytext;
                                         }
 <DocCopyBlock>"'"/[^'a-z_A-Z0-9-]       {
-                                          if (endVerbatimBlock(yyscanner,"`",1))
+                                          if (!Config_getBool(MARKDOWN_STRICT) && endVerbatimBlock(yyscanner,"`",1))
                                           {
                                             BEGIN(DocBlock);
                                           }
@@ -7696,20 +7698,6 @@ static inline int computeIndent(const char *s,int startIndent)
     else col++;
   }
   return col;
-}
-
-static QCString extractBeginRawStringDelimiter(const char *rawStart)
-{
-  QCString text=rawStart;
-  int i = text.find('"');
-  assert(i!=-1);
-  return text.mid(i+1,text.length()-i-2); // text=...R"xyz( -> delimiter=xyz
-}
-
-static QCString extractEndRawStringDelimiter(const char *rawEnd)
-{
-  QCString text=rawEnd;
-  return text.mid(1,text.length()-2); // text=)xyz" -> delimiter=xyz
 }
 
 static inline void initMethodProtection(yyscan_t yyscanner,Protection prot)

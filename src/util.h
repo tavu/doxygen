@@ -349,8 +349,6 @@ QCString stripExtensionGeneral(const QCString &fName, const QCString &ext);
 
 QCString stripExtension(const QCString &fName);
 
-//void replaceNamespaceAliases(QCString &scope,size_t i);
-
 int computeQualifiedIndex(const QCString &name);
 
 void addDirPrefix(QCString &fileName);
@@ -482,5 +480,8 @@ size_t updateColumnCount(const char *s,size_t col);
 
 QCString mangleCSharpGenericName(const QCString &name);
 QCString demangleCSharpGenericName(const QCString &name,const QCString &templArgs);
+
+QCString extractBeginRawStringDelimiter(const char *rawStart);
+QCString extractEndRawStringDelimiter(const char *rawEnd);
 
 #endif

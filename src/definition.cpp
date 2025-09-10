@@ -161,7 +161,7 @@ static bool matchExcludedSymbols(const QCString &name)
   std::string symName = name.str();
   for (const auto &pat : exclSyms)
   {
-    QCString pattern = pat.c_str();
+    QCString pattern = pat;
     bool forceStart=FALSE;
     bool forceEnd=FALSE;
     if (pattern.at(0)=='^')
@@ -448,7 +448,7 @@ void DefinitionImpl::_setBriefDescription(const QCString &b,const QCString &brie
       int c = brief.at(bl-1);
       switch(c)
       {
-        case '.': case '!': case '?': case '>': case ':': case ')': break;
+        case '.': case '!': case '?': case ':': break;
         default:
           if (isUTF8CharUpperCase(brief.str(),0) && !lastUTF8CharIsMultibyte(brief.str())) brief+='.';
           break;
@@ -885,7 +885,7 @@ bool readCodeFragment(const QCString &fileName,bool isMacro,
     bool ok = transcodeCharacterStringToUTF8(encBuf,encoding.data());
     if (ok)
     {
-      result = QCString(encBuf);
+      result = encBuf;
     }
     else
     {
@@ -1512,8 +1512,16 @@ void DefinitionImpl::writeToc(OutputList &ol, const LocalToc &localToc) const
         const Definition *scope = p->def->definitionType()==Definition::TypeMember ? p->def->getOuterScope() : p->def;
         QCString docTitle = si->title();
         if (docTitle.isEmpty()) docTitle = si->label();
-        ol.generateDoc(docFile(),getStartBodyLine(),scope,md,docTitle,TRUE,FALSE,
-                       QCString(),TRUE,FALSE);
+        ol.generateDoc(docFile(),
+                       getStartBodyLine(),
+                       scope,
+                       md,
+                       docTitle,
+                       DocOptions()
+                       .setIndexWords(true)
+                       .setSingleLine(true)
+                       .setSectionLevel(si->type().level())
+                      );
         ol.endTocEntry(si);
       }
     }
@@ -1609,7 +1617,7 @@ static QCString abbreviate(const QCString &s,const QCString &name)
   const StringVector &briefDescAbbrev = Config_getList(ABBREVIATE_BRIEF);
   for (const auto &p : briefDescAbbrev)
   {
-    QCString str = substitute(p.c_str(),"$name",scopelessName); // replace $name with entity name
+    QCString str = substitute(p,"$name",scopelessName); // replace $name with entity name
     str += " ";
     stripWord(result,str);
   }

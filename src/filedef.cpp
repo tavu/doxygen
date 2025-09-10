@@ -279,7 +279,7 @@ std::unique_ptr<FileDef> createFileDef(const QCString &p,const QCString &n,const
 */
 FileDefImpl::FileDefImpl(const QCString &p,const QCString &nm,
                  const QCString &lref,const QCString &dn)
-   : DefinitionMixin(QCString(p)+nm,1,1,nm,nullptr,nullptr,!p.isEmpty())
+   : DefinitionMixin(p+nm,1,1,nm,nullptr,nullptr,!p.isEmpty())
 {
   m_path=removeLongPathMarker(p);
   m_filePath=p+nm;
@@ -488,8 +488,12 @@ void FileDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title)
     ol.startTextBlock();
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF))
     {
-      ol.generateDoc(briefFile(),briefLine(),this,nullptr,briefDescription(),FALSE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(briefFile(),
+                     briefLine(),
+                     this,
+                     nullptr,
+                     briefDescription(),
+                     DocOptions());
     }
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF) &&
         !documentation().isEmpty())
@@ -505,8 +509,13 @@ void FileDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title)
     }
     if (!documentation().isEmpty())
     {
-      ol.generateDoc(docFile(),docLine(),this,nullptr,documentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(docFile(),
+                     docLine(),
+                     this,
+                     nullptr,
+                     documentation()+"\n",
+                     DocOptions()
+                     .setIndexWords(true));
     }
     //printf("Writing source ref for file %s\n",qPrint(name()));
     if (Config_getBool(SOURCE_BROWSER))
@@ -537,9 +546,15 @@ void FileDefImpl::writeBriefDescription(OutputList &ol)
   {
     auto parser { createDocParser() };
     auto ast    { validatingParseDoc(*parser.get(),
-                                     briefFile(),briefLine(),this,nullptr,
-                                     briefDescription(),TRUE,FALSE,
-                                     QCString(),TRUE,FALSE) };
+                                     briefFile(),
+                                     briefLine(),
+                                     this,
+                                     nullptr,
+                                     briefDescription(),
+                                     DocOptions()
+                                     .setIndexWords(true)
+                                     .setSingleLine(true))
+                };
     if (!ast->isEmpty())
     {
       ol.startParagraph();
@@ -885,7 +900,7 @@ void FileDefImpl::writeDocumentation(OutputList &ol)
 
   if (getDirDef())
   {
-    startFile(ol,getOutputFileBase(),name(),pageTitle,HighlightedItem::FileVisible,!generateTreeView);
+    startFile(ol,getOutputFileBase(),false,name(),pageTitle,HighlightedItem::FileVisible,!generateTreeView);
     if (!generateTreeView)
     {
       getDirDef()->writeNavigationPath(ol);
@@ -922,7 +937,7 @@ void FileDefImpl::writeDocumentation(OutputList &ol)
   }
   else
   {
-    startFile(ol,getOutputFileBase(),name(),pageTitle,HighlightedItem::FileVisible,!generateTreeView);
+    startFile(ol,getOutputFileBase(),false,name(),pageTitle,HighlightedItem::FileVisible,!generateTreeView);
     if (!generateTreeView)
     {
       ol.endQuickIndices();
@@ -1152,7 +1167,7 @@ void FileDefImpl::writeSourceHeader(OutputList &ol)
   bool genSourceFile = !isDocFile && generateSourceFile();
   if (getDirDef())
   {
-    startFile(ol,getSourceFileBase(),QCString(),pageTitle,HighlightedItem::FileVisible,
+    startFile(ol,getSourceFileBase(),true,QCString(),pageTitle,HighlightedItem::FileVisible,
         !generateTreeView,
         !isDocFile && genSourceFile ? QCString() : getOutputFileBase(),
         0);
@@ -1167,7 +1182,7 @@ void FileDefImpl::writeSourceHeader(OutputList &ol)
   }
   else
   {
-    startFile(ol,getSourceFileBase(),QCString(),pageTitle,HighlightedItem::FileVisible,false,
+    startFile(ol,getSourceFileBase(),true,QCString(),pageTitle,HighlightedItem::FileVisible,false,
         !isDocFile && genSourceFile ? QCString() : getOutputFileBase(),
         0);
     startTitle(ol,getSourceFileBase());

@@ -476,9 +476,18 @@ void LatexDocVisitor::operator()(const DocVerbatim &s)
       m_t << "}";
       break;
     case DocVerbatim::Verbatim:
-      m_t << "\\begin{DoxyVerb}";
-      m_t << s.text();
-      m_t << "\\end{DoxyVerb}\n";
+      if (isTableNested(s.parent())) // in table
+      {
+        m_t << "\\begin{DoxyCode}{0}";
+        filter(s.text(), true);
+        m_t << "\\end{DoxyCode}\n";
+      }
+      else
+      {
+        m_t << "\\begin{DoxyVerb}";
+        m_t << s.text();
+        m_t << "\\end{DoxyVerb}\n";
+      }
       break;
     case DocVerbatim::HtmlOnly:
     case DocVerbatim::XmlOnly:
@@ -557,7 +566,7 @@ void LatexDocVisitor::operator()(const DocVerbatim &s)
 
         for (const auto &baseName: baseNameVector)
         {
-          writePlantUMLFile(QCString(baseName), s);
+          writePlantUMLFile(baseName, s);
         }
       }
       break;
@@ -632,9 +641,18 @@ void LatexDocVisitor::operator()(const DocInclude &inc)
       m_t << inc.text();
       break;
     case DocInclude::VerbInclude:
-      m_t << "\n\\begin{DoxyVerbInclude}\n";
-      m_t << inc.text();
-      m_t << "\\end{DoxyVerbInclude}\n";
+      if (isTableNested(inc.parent())) // in table
+      {
+        m_t << "\\begin{DoxyCode}{0}";
+        filter(inc.text(), true);
+        m_t << "\\end{DoxyCode}\n";
+      }
+      else
+      {
+        m_t << "\n\\begin{DoxyVerbInclude}\n";
+        m_t << inc.text();
+        m_t << "\\end{DoxyVerbInclude}\n";
+      }
       break;
     case DocInclude::Snippet:
     case DocInclude::SnippetWithLines:
@@ -1256,13 +1274,12 @@ void LatexDocVisitor::writeStartTableCommand(const DocNodeVariant *n,size_t cols
 {
   if (isTableNested(n))
   {
-    m_t << "\n\\begin{DoxyTableNested}{" << cols << "}\n";
+    m_t << "\\begin{DoxyTableNested}{" << cols << "}";
   }
   else
   {
-    m_t << "\n\\begin{DoxyTable}{" << cols << "}\n";
+    m_t << "\n\\begin{DoxyTable}{" << cols << "}";
   }
-  //return isNested ? "TabularNC" : "TabularC";
 }
 
 void LatexDocVisitor::writeEndTableCommand(const DocNodeVariant *n)
@@ -1275,7 +1292,6 @@ void LatexDocVisitor::writeEndTableCommand(const DocNodeVariant *n)
   {
     m_t << "\\end{DoxyTable}\n";
   }
-  //return isNested ? "TabularNC" : "TabularC";
 }
 
 void LatexDocVisitor::operator()(const DocHtmlTable &t)
@@ -1295,32 +1311,29 @@ void LatexDocVisitor::operator()(const DocHtmlTable &t)
   }
 
   writeStartTableCommand(t.parent(),t.numColumns());
-
-  if (c)
+  if (!isTableNested(t.parent()))
   {
-    m_t << "\\caption{";
-    std::visit(*this, *t.caption());
+    // write caption
+    m_t << "{";
+    if (c)
+    {
+      std::visit(*this, *t.caption());
+    }
     m_t << "}";
-    m_t << "\\label{" << stripPath(c->file()) << "_" << c->anchor() << "}";
-    m_t << "\\\\\n";
+    // write label
+    m_t << "{";
+    if (c && (!stripPath(c->file()).isEmpty() || !c->anchor().isEmpty()))
+    {
+      m_t << stripPath(c->file()) << "_" << c->anchor();
+    }
+    m_t << "}";
   }
+
+  // write head row(s)
+  m_t << "{" << t.numberHeaderRows() << "}\n";
 
   setNumCols(t.numColumns());
-  m_t << "\\hline\n";
 
-  // check if first row is a heading and then render the row already here
-  // and end it with \endfirsthead (triggered via m_firstRow==TRUE)
-  // then repeat the row as normal and end it with \endhead (m_firstRow==FALSE)
-  const DocHtmlRow *firstRow = std::get_if<DocHtmlRow>(t.firstRow());
-  if (firstRow && firstRow->isHeading())
-  {
-    setFirstRow(TRUE);
-    if (!isTableNested(t.parent()))
-    {
-      std::visit(*this,*t.firstRow());
-    }
-    setFirstRow(FALSE);
-  }
   visitChildren(t);
   writeEndTableCommand(t.parent());
   popTableState();
@@ -1339,32 +1352,6 @@ void LatexDocVisitor::operator()(const DocHtmlRow &row)
 
   visitChildren(row);
 
-  size_t c=currentColumn();
-  while (c<=numCols()) // end of row while inside a row span?
-  {
-    for (const auto &span : rowSpans())
-    {
-      //printf("  found row span: column=%d rs=%d cs=%d rowIdx=%d cell->rowIdx=%d i=%d c=%d\n",
-      //    span->column, span->rowSpan,span->colSpan,row.rowIndex(),span->cell->rowIndex(),i,c);
-      if (span.rowSpan>0 && span.column==c &&  // we are at a cell in a row span
-          row.rowIndex()>span.cell.rowIndex() // but not the row that started the span
-         )
-      {
-        m_t << "&";
-        if (span.colSpan>1) // row span is also part of a column span
-        {
-          m_t << "\\multicolumn{" << span.colSpan << "}{";
-          m_t <<  "}|}{}";
-        }
-        else // solitary row span
-        {
-          m_t << "\\multicolumn{1}{c|}{}";
-        }
-      }
-    }
-    c++;
-  }
-
   m_t << "\\\\";
 
   size_t col = 1;
@@ -1377,151 +1364,123 @@ void LatexDocVisitor::operator()(const DocHtmlRow &row)
     }
     else if (span.column>col)
     {
-      m_t << "\\cline{" << col << "-" << (span.column-1) << "}";
       col = span.column+span.colSpan;
     }
     else
     {
       col = span.column+span.colSpan;
     }
-  }
-
-  if (col <= numCols())
-  {
-    m_t << "\\cline{" << col << "-" << numCols() << "}";
   }
 
   m_t << "\n";
-
-  const DocNodeVariant *n = ::parent(row.parent());
-  if (row.isHeading() && row.rowIndex()==1 && !isTableNested(n))
-  {
-    if (firstRow())
-    {
-      m_t << "\\endfirsthead\n";
-      m_t << "\\hline\n";
-      m_t << "\\endfoot\n";
-      m_t << "\\hline\n";
-    }
-    else
-    {
-      m_t << "\\endhead\n";
-    }
-  }
 }
 
 void LatexDocVisitor::operator()(const DocHtmlCell &c)
 {
   if (m_hide) return;
-
-  const DocHtmlRow *row = std::get_if<DocHtmlRow>(c.parent());
+  //printf("Cell(r=%u,c=%u) rowSpan=%d colSpan=%d currentColumn()=%zu\n",c.rowIndex(),c.columnIndex(),c.rowSpan(),c.colSpan(),currentColumn());
 
   setCurrentColumn(currentColumn()+1);
 
-  //Skip columns that span from above.
+  QCString cellOpts;
+  QCString cellSpec;
+  auto appendOpt = [&cellOpts](const QCString &s)
+  {
+    if (!cellOpts.isEmpty()) cellOpts+=",";
+    cellOpts+=s;
+  };
+  auto appendSpec = [&cellSpec](const QCString &s)
+  {
+    if (!cellSpec.isEmpty()) cellSpec+=",";
+    cellSpec+=s;
+  };
+  auto writeCell = [this,&cellOpts,&cellSpec]()
+  {
+    if (!cellOpts.isEmpty() || !cellSpec.isEmpty())
+    {
+      m_t << "\\SetCell";
+      if (!cellOpts.isEmpty())
+      {
+        m_t << "[" << cellOpts << "]";
+      }
+      m_t << "{" << cellSpec << "}";
+    }
+  };
+
+  // skip over columns that have a row span starting at an earlier row
   for (const auto &span : rowSpans())
   {
+    //printf("span(r=%u,c=%u): column=%zu colSpan=%zu,rowSpan=%zu currentColumn()=%zu\n",
+    //    span.cell.rowIndex(),span.cell.columnIndex(),
+    //    span.column,span.colSpan,span.rowSpan,
+    //    currentColumn());
     if (span.rowSpan>0 && span.column==currentColumn())
     {
-      if (row && span.colSpan>1)
+      setCurrentColumn(currentColumn()+span.colSpan);
+      for (size_t i=0;i<span.colSpan;i++)
       {
-        m_t << "\\multicolumn{" << span.colSpan << "}{";
-        if (currentColumn() /*c.columnIndex()*/==1) // add extra | for first column
-        {
-          m_t << "|";
-        }
-        m_t << "l|}{" << (c.isHeading()? "\\columncolor{\\tableheadbgcolor}" : "") << "}"; // alignment not relevant, empty column
-        setCurrentColumn(currentColumn()+span.colSpan);
+        m_t << "&";
       }
-      else
-      {
-        setCurrentColumn(currentColumn()+1);
-      }
-      m_t << "&";
     }
   }
 
   int cs = c.colSpan();
-  int a = c.alignment();
-  if (cs>1 && row)
-  {
-    setInColSpan(TRUE);
-    m_t << "\\multicolumn{" << cs << "}{";
-    if (c.columnIndex()==1) // add extra | for first column
-    {
-      m_t << "|";
-    }
-    switch (a)
-    {
-      case DocHtmlCell::Right:
-        m_t << "r|}{";
-        break;
-      case DocHtmlCell::Center:
-        m_t << "c|}{";
-        break;
-      default:
-        m_t << "l|}{";
-        break;
-    }
-  }
+  int ha = c.alignment();
   int rs = c.rowSpan();
   int va = c.valignment();
-  if (rs>0)
+
+  switch (ha) // horizontal alignment
   {
-    setInRowSpan(TRUE);
-    m_t << "\\multirow";
-    switch(va)
-    {
-      case DocHtmlCell::Top:
-        m_t << "[t]";
-        break;
-      case DocHtmlCell::Bottom:
-        m_t << "[b]";
-        break;
-      case DocHtmlCell::Middle:
-        break; // No alignment option needed
-      default:
-        break;
-    }
-    //printf("adding row span: cell={r=%d c=%d rs=%d cs=%d} curCol=%d\n",
+    case DocHtmlCell::Right:
+      appendSpec("r");
+      break;
+    case DocHtmlCell::Center:
+      appendSpec("c");
+      break;
+    default:
+      // default
+      break;
+  }
+  if (rs>0) // row span
+  {
+    appendOpt("r="+QCString().setNum(rs));
+    //printf("adding row span: cell={r=%d c=%d rs=%d cs=%d} curCol=%zu\n",
     //                       c.rowIndex(),c.columnIndex(),c.rowSpan(),c.colSpan(),
     //                       currentColumn());
     addRowSpan(ActiveRowSpan(c,rs,cs,currentColumn()));
-    m_t << "{" << rs << "}{*}{";
   }
-  if (a==DocHtmlCell::Center)
+  if (cs>1) // column span
   {
-    m_t << "\\PBS\\centering ";
-  }
-  else if (a==DocHtmlCell::Right)
-  {
-    m_t << "\\PBS\\raggedleft ";
+    // update column to the end of the span, needs to be done *after* calling addRowSpan()
+    setCurrentColumn(currentColumn()+cs-1);
+    appendOpt("c="+QCString().setNum(cs));
   }
   if (c.isHeading())
   {
-    m_t << "\\cellcolor{\\tableheadbgcolor}\\textbf{ ";
+    appendSpec("bg=\\tableheadbgcolor");
+    appendSpec("font=\\bfseries");
   }
-  if (cs>1)
+  switch(va) // vertical alignment
   {
-    setCurrentColumn(currentColumn()+cs-1);
+    case DocHtmlCell::Top:
+      appendSpec("h");
+      break;
+    case DocHtmlCell::Bottom:
+      appendSpec("f");
+      break;
+    case DocHtmlCell::Middle:
+      // default
+      break;
   }
+  writeCell();
 
   visitChildren(c);
 
-  if (c.isHeading())
+  for (int i=0;i<cs-1;i++)
   {
-    m_t << "}";
+    m_t << "&"; // placeholder for invisible cell
   }
-  if (inRowSpan())
-  {
-    setInRowSpan(FALSE);
-    m_t << "}";
-  }
-  if (inColSpan())
-  {
-    setInColSpan(FALSE);
-    m_t << "}";
-  }
+
   if (!c.isLast()) m_t << "&";
 }
 
@@ -2123,13 +2082,13 @@ void LatexDocVisitor::startPlantUmlFile(const QCString &fileName,
 
   bool useBitmap = inBuf.find("@startditaa") != std::string::npos;
   auto baseNameVector = PlantumlManager::instance().writePlantUMLSource(
-                              outDir,QCString(),inBuf.c_str(),
+                              outDir,QCString(),inBuf,
                               useBitmap ? PlantumlManager::PUML_BITMAP : PlantumlManager::PUML_EPS,
                               QCString(),srcFile,srcLine,false);
   bool first = true;
   for (const auto &bName: baseNameVector)
   {
-    QCString baseName = makeBaseName(QCString(bName));
+    QCString baseName = makeBaseName(bName);
     QCString shortName = makeShortName(baseName);
     if (useBitmap)
     {

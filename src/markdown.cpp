@@ -89,11 +89,19 @@ enum class ExplicitPageResult
    c=='>' || c==':' || c==',' || \
    c==';' || c=='\'' || c=='"' || c=='`')
 
-// is character at position i in data allowed before an emphasis section
+// is character c allowed before an emphasis section
 #define isOpenEmphChar(c) \
   (c=='\n' || c==' ' || c=='\'' || c=='<' || \
    c=='>'  || c=='{' || c=='('  || c=='[' || \
    c==','  || c==':' || c==';')
+
+// test for non breakable space (UTF-8)
+#define isUtf8Nbsp(c1,c2) \
+  (c1==static_cast<char>(0xc2) && c2==static_cast<char>(0xa0))
+
+#define isAllowedEmphStr(data,offset) \
+  (!(offset>0 && isOpenEmphChar(data.data()[-1])) && \
+   !(offset>1 && isUtf8Nbsp(data.data()[-2],data.data()[-1])))
 
 // is character at position i in data an escape that prevents ending an emphasis section
 // so for example *bla (*.txt) is cool*
@@ -248,7 +256,17 @@ static QCString escapeSpecialChars(const QCString &s)
     switch (c)
     {
       case '"':
-        if (pc!='\\')  { insideQuote=!insideQuote; }
+        if (pc!='\\')
+        {
+          if (Config_getBool(MARKDOWN_STRICT))
+          {
+            result+='\\';
+          }
+          else // For Doxygen's markup style a quoted text is left untouched
+          {
+            insideQuote=!insideQuote;
+          }
+        }
         result+=c;
         break;
       case '<':
@@ -1107,7 +1125,7 @@ int Markdown::Private::processEmphasis(std::string_view data,size_t offset)
   AUTO_TRACE("data='{}' offset={}",Trace::trunc(data),offset);
   const size_t size = data.size();
 
-  if ((offset>0 && !isOpenEmphChar(data.data()[-1])) || // invalid char before * or _
+  if (isAllowedEmphStr(data,offset) || // invalid char before * or _
       (size>1 && data[0]!=data[1] && !(isIdChar(data[1]) || extraChar(data[1]))) || // invalid char after * or _
       (size>2 && data[0]==data[1] && !(isIdChar(data[2]) || extraChar(data[2]))))   // invalid char after ** or __
   {
@@ -1641,6 +1659,7 @@ int Markdown::Private::processCodeSpan(std::string_view data,size_t offset)
   /* finding the next delimiter with the same amount of backticks */
   size_t i = 0;
   char pc = '`';
+  bool markdownStrict = Config_getBool(MARKDOWN_STRICT);
   for (end=nb; end<size; end++)
   {
     //AUTO_TRACE_ADD("c={} nb={} i={} size={}",data[end],nb,i,size);
@@ -1649,7 +1668,7 @@ int Markdown::Private::processCodeSpan(std::string_view data,size_t offset)
       i++;
       if (nb==1) // `...`
       {
-        if (end<size && data[end+1]=='`') // skip over `` inside `...`
+        if (end+1<size && data[end+1]=='`') // skip over `` inside `...`
         {
           AUTO_TRACE_ADD("case1.1");
           // skip
@@ -1664,7 +1683,7 @@ int Markdown::Private::processCodeSpan(std::string_view data,size_t offset)
       }
       else if (i==nb) // ``...``
       {
-        if (end<size && data[end+1]=='`') // do greedy match
+        if (end+1<size && data[end+1]=='`') // do greedy match
         {
           // skip this quote and use the next one to terminate the sequence, e.g. ``X`Y```
           i--;
@@ -1688,7 +1707,7 @@ int Markdown::Private::processCodeSpan(std::string_view data,size_t offset)
       pc = '\n';
       i = 0;
     }
-    else if (data[end]=='\'' && nb==1 && (end==size-1 || (end+1<size && data[end+1]!='\'' && !isIdChar(data[end+1]))))
+    else if (!markdownStrict && data[end]=='\'' && nb==1 && (end+1==size || (end+1<size && data[end+1]!='\'' && !isIdChar(data[end+1]))))
     { // look for quoted strings like 'some word', but skip strings like `it's cool`
       out+="&lsquo;";
       out+=data.substr(nb,end-nb);
@@ -1696,7 +1715,7 @@ int Markdown::Private::processCodeSpan(std::string_view data,size_t offset)
       AUTO_TRACE_EXIT("quoted end={}",end+1);
       return static_cast<int>(end+1);
     }
-    else if (data[end]=='\'' && nb==2 && end<size-1 && data[end+1]=='\'')
+    else if (!markdownStrict && data[end]=='\'' && nb==2 && end+1<size && data[end+1]=='\'')
     { // look for '' to match a ``
       out+="&ldquo;";
       out+=data.substr(nb,end-nb);
@@ -2057,7 +2076,7 @@ QCString Markdown::Private::extractTitleId(QCString &title, int level, bool *pIs
     {
       warn(fileName, lineNr, "An automatically generated id already has the name '{}'!", id);
     }
-    //printf("found match id='%s' title=%s\n",id.c_str(),qPrint(title));
+    //printf("found match id='%s' title=%s\n",qPrint(id),qPrint(title));
     AUTO_TRACE_EXIT("id={}",id);
     return id;
   }
@@ -3653,8 +3672,8 @@ QCString Markdown::process(const QCString &input, int &startNewlines, bool fromP
 QCString markdownFileNameToId(const QCString &fileName)
 {
   AUTO_TRACE("fileName={}",fileName);
-  std::string absFileName = FileInfo(fileName.str()).absFilePath();
-  QCString baseFn  = stripFromPath(absFileName.c_str());
+  QCString absFileName = FileInfo(fileName.str()).absFilePath();
+  QCString baseFn = stripFromPath(absFileName);
   int i = baseFn.findRev('.');
   if (i!=-1) baseFn = baseFn.left(i);
   QCString baseName = escapeCharsInString(baseFn,false,false);
